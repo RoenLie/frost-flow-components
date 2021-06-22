@@ -1,0 +1,41 @@
+{
+   "compilerOptions": {
+      "target": "es2018",
+      "module": "esnext",
+      "moduleResolution": "node",
+      "noEmitOnError": true,
+      "lib": [
+         "es2017",
+         "dom"
+      ],
+      "strict": true,
+      "esModuleInterop": true,
+      "allowSyntheticDefaultImports": true,
+      "experimentalDecorators": true,
+      "importHelpers": true,
+      "outDir": "dist",
+      "sourceMap": true,
+      "inlineSources": true,
+      "allowJs": true,
+      "declaration": true,
+      "incremental": true,
+      "noImplicitAny": false,
+      "noImplicitReturns": true,
+      "baseUrl": "../",
+      "paths": {
+         "@lit-components/*": [
+            "lit-components/*"
+         ],
+         "@es-components/*": [
+            "es-components/*"
+         ],
+         "@/*": [
+            "./*"
+         ]
+      },
+   },
+   "include": [
+      "**/*.ts",
+      "**/*.js",
+   ]
+}

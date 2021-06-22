@@ -1,0 +1,12 @@
+{
+   "name": "frostflow-components",
+   "version": "0.0.1",
+   "description": "Library of web components for the frost flow project.",
+   "author": "Kristoffer Roen-Lie",
+   "license": "GNU",
+   "scripts": {
+      "install-storybook": "cd ./storybook && npm install",
+      "storybook": "cd ./storybook && npm run storybook",
+      "build-storybook": "cd ./storybook && npm run build-storybook"
+   }
+}

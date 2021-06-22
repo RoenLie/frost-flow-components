@@ -1,0 +1,23 @@
+{
+   "name": "frostflow-web-components",
+   "version": "0.0.1",
+   "description": "Frostflow web component library",
+   "author": "Kristoffer Roen-Lie",
+   "license": "GPL3",
+   "main": "dist/index.js",
+   "module": "dist/index.js",
+   "scripts": {
+      "start": "tsc && concurrently -k -r \"tsc --watch --preserveWatchOutput\" \"wds\"",
+      "build": "tsc",
+      "prepare": "tsc"
+   },
+   "dependencies": {
+      "lit": "^2.0.0-rc.2"
+   },
+   "devDependencies": {
+      "@web/dev-server": "^0.1.17",
+      "concurrently": "^5.3.0",
+      "typescript": "^4.3.4",
+      "tslib": "^2.3.0"
+   }
+}
