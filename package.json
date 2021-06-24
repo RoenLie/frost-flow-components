@@ -3,10 +3,10 @@
    "version": "0.0.1",
    "description": "Library of web components for the frost flow project.",
    "author": "Kristoffer Roen-Lie",
-   "license": "GNU",
+   "license": "GPL3",
    "scripts": {
-      "install-storybook": "cd ./storybook && npm install",
-      "storybook": "cd ./storybook && npm run storybook",
-      "build-storybook": "cd ./storybook && npm run build-storybook"
+      "install-storybook": "cd ./storybook && yarn install",
+      "storybook": "cd ./storybook && yarn storybook",
+      "build-storybook": "cd ./storybook && yarn build-storybook"
    }
 }

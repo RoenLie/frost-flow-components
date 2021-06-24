@@ -1,7 +1,7 @@
 import { Story, Meta } from "@storybook/web-components";
 import { html } from "lit";
-import { FrostFlowButton } from "../../lit-components";
-FrostFlowButton;
+import { FrostButton } from "../../lit-components";
+FrostButton;
 
 export default {
    title: 'Frostflow/Button',
@@ -10,7 +10,7 @@ export default {
 } as Meta;
 
 const Template: Story = ( { count, label } ) => html`
-   <frost-flow-button count=${ count } label=${ label }></frost-flow-button>
+   <frost-button label=${ label }></frost-button>
 `;
 
 export const Primary = Template.bind( {} );
