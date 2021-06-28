@@ -1,6 +1,6 @@
 import { Story, Meta } from "@storybook/web-components";
 import { html } from "lit";
-import { FrostButton } from "../../lit-components";
+import { FrostButton } from "../../lit-components/index";
 FrostButton;
 
 export default {
