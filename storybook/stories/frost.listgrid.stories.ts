@@ -1,8 +1,9 @@
 import { Story, Meta } from "@storybook/web-components";
 import { html } from "lit";
-import { VirtualScrollApi } from "../../lit-components/src/components/frost-list-grid/FrostListGridApi";
-import { FrostListGrid } from "../../lit-components/index";
+import { FrostListGrid, VirtualScrollApi } from "../../lit-components/src/components/frost-list-grid/FrostListGrid";
+import { FrostPreviewOrOpen } from "../../lit-components/src/components/frost-list-grid/field-renderers/FrostPreviewOrOpen";
 FrostListGrid;
+FrostPreviewOrOpen;
 
 export default {
    title: "Frostflow/ListGrid",
@@ -45,10 +46,6 @@ const getRowsAsync = async ( { request, fail, success }: any ) => {
       rowData: response.rows || [],
       lastRow: response.lastRow || 0,
    } );
-   // success( {
-   //    rowData: [ {} ],
-   //    lastRow: 1,
-   // } );
 };
 
 const defaultColDefs = {
@@ -67,10 +64,33 @@ const colDefs = [
       moveable: false,
       menu: true,
       checkbox: true,
-      actions: [
-         { icon: 'eye_regular' },
-         { icon: 'box_open_solid' }
-      ]
+      renderer: ( rowData ) => html`
+         <frost-preview-or-open
+            .rowData=${ rowData }
+            @onOpen=${ ( e ) => console.log( 'on open event', e ) }
+            @onPreview=${ ( e ) => console.log( 'on preview event', e ) }
+         ></frost-preview-or-open>`
+      // renderer: ( rowData ) => html`
+      // <div>
+      //    <style>
+      //       .icon {
+      //          height: 1rem;
+      //          width: 1rem;
+      //          opacity: 0.4;
+      //          transition: opacity 0.2s linear;
+      //          color: pink;
+      //       }
+      //       .icon:hover {
+      //          opacity: 1
+      //       }
+      //    </style>
+      //    <div class="icon">
+      //       <svg aria-hidden="true" focusable="false" data-prefix="fas" data-icon="chevron-down" class="svg-inline--fa fa-chevron-down fa-w-14" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512">
+      //          <path fill="currentColor" d="M207.029 381.476L12.686 187.132c-9.373-9.373-9.373-24.569 0-33.941l22.667-22.667c9.357-9.357 24.522-9.375 33.901-.04L224 284.505l154.745-154.021c9.379-9.335 24.544-9.317 33.901.04l22.667 22.667c9.373 9.373 9.373 24.569 0 33.941L240.971 381.476c-9.373 9.372-24.569 9.372-33.942 0z"></path>
+      //       </svg>
+      //    </div>
+      // </div>
+      // `
    },
    {
       label: 'AthleteLongLableTestAthleteLongLableTest',
@@ -180,14 +200,19 @@ const colDefs = [
    }
 ];
 
-
 const api = new VirtualScrollApi();
 api.listApi.setColumnDefinitions( defaultColDefs, colDefs );
 api.listApi.setDatasource( { getRows: getRowsAsync } );
 
+// api.publishers.rowClick.subscribe( ( rowData ) => {
+//    console.log( 'from subscription', rowData );
+// } );
+
 
 const Template: Story = () => html`
-   <frost-listgrid .api=${ api }></frost-listgrid>
+   <div style="display: grid;height:92vh;">
+      <frost-list-grid .api=${ api }></frost-list-grid>
+   </div>
 `;
 
 export const Default = Template.bind( {} );

@@ -43,6 +43,7 @@ export interface IColDefs {
    resizable?: boolean;
    moveable?: boolean;
    menu?: boolean;
+   renderer?: any;
 }
 
 type ListGridMode = 'ssr' | 'normal';
@@ -62,8 +63,8 @@ class EventApi {
 
 export class VirtualScrollApi {
    mode: ListGridMode = 'ssr';
-   rerender?: () => void;
-   debounceRender = debounce( () => this.rerender?.(), 100 ).bind( this );
+   rerender: () => void = () => { };
+   debounceRender = debounce( () => this.rerender(), 100 ).bind( this );
    listApi = new ListApi( this );
    columnApi = new ColumnApi( this );
    styleApi = new StyleApi( this );
@@ -73,7 +74,8 @@ export class VirtualScrollApi {
       hideColumn: new Publisher<any[]>( [] ),
       sortColumn: new Publisher<any[]>( [] ),
       rowData: new Publisher<TSuccessParams>( { rowData: [], lastRow: -1 } ),
-      query: new Publisher( 0 )
+      query: new Publisher( 0 ),
+      rowClick: new Publisher( { data: {}, field: '', index: 0 } )
    };
    constructor () { }
 }
@@ -100,7 +102,7 @@ class ColumnApi {
       };
 
       this.root.publishers.hideColumn.publish();
-      this.root.rerender?.();
+      this.root.rerender();
    }
 }
 
@@ -146,7 +148,7 @@ class ColumnMenuApi extends EventApi {
       this.open = true;
       this.xy = [ e.clientX - 15, e.clientY - 15 ];
       this.subscriptions.push( [ window, 'mousedown', this.closeMenu.bind( this ) ] );
-      this.columnApi.root.rerender?.();
+      this.columnApi.root.rerender();
       super.subscribe();
    }
    closeMenu( e: MouseEvent ) {
@@ -157,7 +159,7 @@ class ColumnMenuApi extends EventApi {
 
       this.open = false;
       this.xy = [ 0, 0 ];
-      this.columnApi.root.rerender?.();
+      this.columnApi.root.rerender();
       super.unsubscribe();
    }
 }
@@ -218,7 +220,7 @@ class MoveColumnApi extends EventApi {
          const offset = [ e.clientX - this.startPos[ 0 ], e.clientY - this.startPos[ 1 ] ];
          this.offset = offset;
 
-         this.columnApi.root.rerender?.();
+         this.columnApi.root.rerender();
 
          this.frameQueue = false;
       } ) );
@@ -251,7 +253,7 @@ class MoveColumnApi extends EventApi {
          }
       };
 
-      this.columnApi.root.rerender?.();
+      this.columnApi.root.rerender();
    }
    mouseup() {
       this.unsubscribe();
@@ -273,7 +275,7 @@ class MoveColumnApi extends EventApi {
       document.body.classList.remove( 'cursorMove' );
 
       super.unsubscribe();
-      this.columnApi.root.rerender?.();
+      this.columnApi.root.rerender();
    }
 }
 
@@ -324,7 +326,7 @@ class ResizeColumnApi extends EventApi {
             }
          };
 
-         this.columnApi.root.rerender?.();
+         this.columnApi.root.rerender();
          this.frameQueue = false;
       } );
    }
@@ -346,7 +348,7 @@ class ResizeColumnApi extends EventApi {
       this.field = null;
       this.resizing = false;
       this.frameQueue = false;
-      this.columnApi.root.rerender?.();
+      this.columnApi.root.rerender();
    }
 }
 
@@ -451,7 +453,7 @@ class ListApi {
          }, {} );
       }
 
-      this.root.rerender?.();
+      this.root.rerender();
    }
    checkRow( rowIndex: number ) {
       let value = this.checkedRows[ rowIndex ];
@@ -467,7 +469,7 @@ class ListApi {
          .filter( Boolean ).length == this.rowCount )
          this.allRowsChecked = true;
 
-      this.root.rerender?.();
+      this.root.rerender();
    }
    sortRows( field: string ) {
       const { moveColumnApi, resizeColumnApi } = this.root.columnApi;
@@ -548,7 +550,7 @@ class ListApi {
       this.root.publishers.rowData.next( { rowData, lastRow } );
       this.root.publishers.query.next( this.rowCount );
 
-      this.root.rerender?.();
+      this.root.rerender();
 
       // repeat the request untill view is saturated
       // or last row has been fetched
@@ -574,7 +576,7 @@ class ListWrapperApi extends EventApi {
 
    resizeEnd() {
       this.resizing = false;
-      this.listApi.root.rerender?.();
+      this.listApi.root.rerender();
    }
    calcWrapperHeight = () => {
       const el = this.element;
@@ -586,7 +588,7 @@ class ListWrapperApi extends EventApi {
 
          if ( !this.resizing ) {
             this.resizing = true;
-            this.listApi.root.rerender?.();
+            this.listApi.root.rerender();
          }
 
          this.debounceResize();
@@ -645,7 +647,7 @@ class ScrollApi extends EventApi {
 
          /* rerender if scrolling in the X axis */
          if ( el.lastScrollLeft != el.scrollLeft ) {
-            this.listApi.root.rerender?.();
+            this.listApi.root.rerender();
 
             el.lastScrollLeft = el.scrollLeft;
             el.lastScrollTop = el.scrollTop;
@@ -668,11 +670,13 @@ class ScrollApi extends EventApi {
          const moverRects = moverEl?.getBoundingClientRect();
 
          if ( wrapperRects.top < Number( moverRects?.top ) && this.scrollTop > 0 ) {
-            this.listApi.root.debounceRender();
+            // this.listApi.root.debounceRender();
+            this.listApi.root.rerender();
          }
 
          if ( wrapperRects.bottom > Number( moverRects?.bottom ) ) {
-            this.listApi.root.debounceRender();
+            // this.listApi.root.debounceRender();
+            this.listApi.root.rerender();
          }
 
          // const viewableHeight =

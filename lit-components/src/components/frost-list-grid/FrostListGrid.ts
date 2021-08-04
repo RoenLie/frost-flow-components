@@ -1,47 +1,98 @@
 import { css, html, LitElement } from "lit";
-import { customElement, property, query } from "lit/decorators";
+import { customElement, property } from "lit/decorators.js";
 import { classMap } from 'lit/directives/class-map.js';
 import { styleMap } from 'lit/directives/style-map.js';
-import { IColDefs, VirtualScrollApi } from "src/components/frost-list-grid/FrostListGridApi";
+import { IColDefs, VirtualScrollApi } from "./FrostListGridApi";
+export { VirtualScrollApi } from "./FrostListGridApi";
 
 
-@customElement( "frost-listgrid" )
+interface FlexibleHTMLElement extends HTMLElement { [ key: string ]: any; };
+
+@customElement( "frost-list-grid" )
 export class FrostListGrid extends LitElement {
    @property( { type: Object } ) api: VirtualScrollApi;
-   hostId = 'test';
+   initialized = false;
+   hostId = Math.floor( Math.random() * 999 );
    visibleHeaders = html``;
    visibleRows = html``;
    headerMenu = html``;
    columnGhost = html``;
+   subscribers: [ FlexibleHTMLElement | Window, keyof WindowEventMap, any ][] = [];
 
    connectedCallback() {
       super.connectedCallback();
-
-      this.api.rerender = this.requestUpdate.bind( this ) as any;
-
-      setTimeout( () => {
-         const { listWrapperApi, scrollApi } = this.api.listApi;
-
-         listWrapperApi.element = this.renderRoot.querySelector(
-            `#${ this.hostId }listRowWrapper`
-         );
-         scrollApi.element = this.renderRoot.querySelector(
-            `#${ this.hostId }viewportWrapper`
-         );
-
-         listWrapperApi.subscribe();
-         scrollApi.subscribe();
-
-         listWrapperApi.calcWrapperHeight();
-      } );
+      if ( this.api?.mode )
+         setTimeout( () => this.initialize( this.api ) );
    }
    disconnectedCallback() {
       super.disconnectedCallback();
+      this.unsubscribe();
+   }
+
+   initialize( api: VirtualScrollApi ) {
+      this.api = api;
+      this.api.rerender = this.requestUpdate.bind( this ) as any;
+
+      setTimeout( () => this.subscribe() );
+   }
+   subscribe() {
+      if ( this.initialized ) return;
+      this.initialized = true;
 
       const { listWrapperApi, scrollApi } = this.api.listApi;
+      listWrapperApi.element = this.renderRoot.querySelector(
+         `#listRowWrapper-${ this.hostId }`
+      );
+      scrollApi.element = this.renderRoot.querySelector(
+         `#viewportWrapper-${ this.hostId }`
+      );
+      listWrapperApi.subscribe();
+      scrollApi.subscribe();
+      listWrapperApi.calcWrapperHeight();
 
+      // this.subscribers.push( [ viewmoverEl, 'click', this.onRowClick.bind( this ) ] );
+      // this.subscribers.forEach( s => s[ 0 ].addEventListener( s[ 1 ], s[ 2 ] ) );
+   }
+   unsubscribe() {
+      const { listWrapperApi, scrollApi } = this.api.listApi;
       listWrapperApi.unsubscribe();
       scrollApi.unsubscribe();
+
+      // this.subscribers.forEach( s => s[ 0 ].removeEventListener( s[ 1 ], s[ 2 ] ) );
+      // this.subscribers.length = 0;
+   }
+   onRowClick( e: Event ) {
+      const path = e.composedPath();
+
+      const dataAssignment = [
+         [ 'data-row-index', 'index' ],
+         [ 'data-field', 'field' ]
+      ];
+
+      /* goes through the composed path and extracts the attributes
+      from data assignment variable and returns them in an object */
+      const row = path.reduce( ( a, _el ) => {
+         const el = _el as HTMLElement;
+         if ( !el.getAttribute ) return a;
+
+         const dataAttr = dataAssignment.reduce( ( _a, _c ) => {
+            const attr = el.getAttribute( _c[ 0 ] );
+            if ( attr ) _a[ 0 ] = _c[ 1 ], _a[ 1 ] = attr;
+            return _a;
+         }, [] );
+
+         if ( dataAttr.length ) a[ dataAttr[ 0 ] ] = dataAttr[ 1 ];
+
+         return a;
+      }, {} as any );
+
+      const rowData = {
+         data: this.api.listApi.rowData[ row.index ],
+         field: row.field,
+         index: Number( row.index )
+      };
+
+      this.api.publishers.rowClick.next( rowData );
    }
 
    ListRow = ( rowIndex: number ) => {
@@ -57,11 +108,14 @@ export class FrostListGrid extends LitElement {
          checked: listApi.checkedRows[ rowIndex ]
       };
 
+      /* @click=${ ( e: any ) => this.onRowClick( e, this.api.listApi.rowData[ rowIndex ] ) } */
       return html`
-         <div class=${ classMap( rowClasses ) } style=${ styleMap( rowStyle ) }>
+         <div class=${ classMap( rowClasses ) } style=${ styleMap( rowStyle ) }
+            data-row-index=${ rowIndex }
+         >
             ${ columnApi.colDefs.merged
             .filter( def => !def.hidden )
-            .map( ( def, i ) => this.ListRowField( def, rowIndex ) ) }
+            .map( ( def ) => this.ListRowField( def, rowIndex ) ) }
          </div>
       `;
    };
@@ -74,42 +128,43 @@ export class FrostListGrid extends LitElement {
          minWidth: `${ def.minWidth }px`
       };
 
+      const fieldText = listApi.rowData[ rowIndex ]?.[ def.field ];
+
+      const rowData = {
+         data: listApi.rowData[ rowIndex ],
+         field: def.field,
+         index: rowIndex
+      };
+
       return html`
-         <div class="rowField" style=${ styleMap( fieldStyle ) }>
+         <div class="rowField" style=${ styleMap( fieldStyle ) }
+            data-field=${ def.field }
+         >
             <!-- checkbox area -->
-            ${ !def.checkbox ? null : html`
+            ${ !def.checkbox ? '' : html`
                <div class="checkbox">
                   <input
+                     title="select row"
                      type="checkbox"
                      .checked=${ listApi.checkedRows[ rowIndex ] }
                      @change=${ () => listApi.checkRow( rowIndex ) }
                   />
                </div>
             `}
-
-            <!-- action area -->
-            ${ !def.actions?.length ? null : html`
-               <div class="icons">
-                  ${ def.actions.map( ( ac: any ) => html`
-                     <div @click=${ ac.onClick }>💩</div>
-                  `) }
-               </div>
+            <!-- field renderer -->
+            ${ def.renderer ? def.renderer( rowData ) : html`
+               ${ !fieldText ? '' : html`<div class="fieldText">${ fieldText }</div>` }
             `}
-
-            <!-- field text -->
-            <div class="fieldText">
-               ${ listApi.rowData[ rowIndex ]?.[ def.field ] }
-            </div>
          </div>
       `;
    };
+
    render = () => {
+      if ( !this.api ) return html``;
+
       const { listApi, columnApi, styleApi } = this.api;
       const { moveColumnApi, resizeColumnApi, columnMenuApi } = this.api.columnApi;
-      const { scrollApi, listWrapperApi } = this.api.listApi;
-      const { viewportWrapperStyle, viewportStyle,
-         viewMoverStyle, listHeaderStyle } = styleApi;
-
+      const { viewportWrapperStyle, viewportStyle, viewMoverStyle, listHeaderStyle } = styleApi;
 
       this.visibleHeaders = !columnApi.colDefs.merged ? html`` : html`
       ${ columnApi.colDefs.merged
@@ -125,7 +180,6 @@ export class FrostListGrid extends LitElement {
 
                return html`
                <div
-                  .key=${ def.field }
                   id=${ fieldId }
                   style=${ styleMap( columnStyle ) }
                   class="headerField"
@@ -133,7 +187,7 @@ export class FrostListGrid extends LitElement {
                   >
                      <!-- check all rows -->
                      ${ def.checkbox ? html`
-                     <div>
+                     <div class="checkbox">
                         <input type="checkbox"
                         .checked=${ listApi.allRowsChecked }
                         @change=${ listApi.checkAllRows.bind( listApi ) }
@@ -154,20 +208,29 @@ export class FrostListGrid extends LitElement {
                      <div class="columnMenuWrapper">
                         ${ def.sort == 'asc' ? html`
                            <div class="columnSort"
-                              @mouseup=${ ( e: any ) => listApi.sortRows( def.field ) }>🔼</div>
+                              @mouseup=${ ( e: any ) => listApi.sortRows( def.field ) }>
+                              <svg class="icon">
+                                 <use id="use" xlink:href="#icon-chevron-up"></use>
+                              </svg>
+                           </div>
                         `: def.sort == 'desc' ? html`
                            <div class="columnSort"
-                              @mouseup=${ ( e: any ) => listApi.sortRows( def.field ) }>🔽</div>
-                        `: '' }
-
-                        ${ def.menu !== false ? html`
-                           <div class="columnMenu"
-                              @click=${ ( e: any ) => columnMenuApi.openMenu( e ) }>
-                              <div>🕸</div>
+                              @mouseup=${ ( e: any ) => listApi.sortRows( def.field ) }>
+                              <svg class="icon">
+                                 <use id="use" xlink:href="#icon-chevron-down"></use>
+                              </svg>
                            </div>
                         `: '' }
-                     </div>
 
+                        ${ def.menu !== true ? '' : html`
+                           <div class="columnMenu"
+                              @click=${ ( e: any ) => columnMenuApi.openMenu( e ) }>
+                              <svg class="icon">
+                                 <use id="use" xlink:href="#icon-bars-solid"></use>
+                              </svg>
+                           </div>
+                        `}
+                     </div>
 
                      <!-- header field resize functionality -->
                      <div class="columnResizer">
@@ -223,7 +286,7 @@ export class FrostListGrid extends LitElement {
 
 
       return html`
-      <div class="host" id=${ this.hostId } data-name="frostflow-list-grid">
+      <div class="host" id=${ `listGridHost-${ this.hostId }` }>
          <div class="wrapper">
             <!-- Header -->
             <div class="listHeaderWrapper">
@@ -233,14 +296,15 @@ export class FrostListGrid extends LitElement {
             </div>
 
             <!-- Rows -->
-            <div class="listRowWrapper" id=${ `${ this.hostId }listRowWrapper` }>
+            <div class="listRowWrapper" id=${ `listRowWrapper-${ this.hostId }` }>
                <div class="viewportWrapper" style=${ styleMap( viewportWrapperStyle ) }
-                  id=${ `${ this.hostId }viewportWrapper` }
+                  id=${ `viewportWrapper-${ this.hostId }` }
                >
                   <div class="viewport" style=${ styleMap( viewportStyle ) }
                   >
                      <div class="viewMover" style=${ styleMap( viewMoverStyle ) }
-                        data-name="viewmover"
+                        @click=${ this.onRowClick }
+                        id=${ `viewmover-${ this.hostId }` } data-name="viewmover"
                      >
                         ${ this.visibleRows }
                      </div>
@@ -252,6 +316,20 @@ export class FrostListGrid extends LitElement {
          ${ this.headerMenu }
          ${ this.columnGhost }
       </div>
+
+      <svg class="iconHost" xmlns="http://www.w3.org/2000/svg">
+         <defs>
+            <symbol id="icon-bars-solid" viewBox="0 0 448 512">
+               <path fill="currentColor" d="M16 132h416c8.837 0 16-7.163 16-16V76c0-8.837-7.163-16-16-16H16C7.163 60 0 67.163 0 76v40c0 8.837 7.163 16 16 16zm0 160h416c8.837 0 16-7.163 16-16v-40c0-8.837-7.163-16-16-16H16c-8.837 0-16 7.163-16 16v40c0 8.837 7.163 16 16 16zm0 160h416c8.837 0 16-7.163 16-16v-40c0-8.837-7.163-16-16-16H16c-8.837 0-16 7.163-16 16v40c0 8.837 7.163 16 16 16z"></path>
+            </symbol>
+            <symbol id="icon-chevron-down" viewBox="0 0 448 512">
+               <path fill="currentColor" d="M207.029 381.476L12.686 187.132c-9.373-9.373-9.373-24.569 0-33.941l22.667-22.667c9.357-9.357 24.522-9.375 33.901-.04L224 284.505l154.745-154.021c9.379-9.335 24.544-9.317 33.901.04l22.667 22.667c9.373 9.373 9.373 24.569 0 33.941L240.971 381.476c-9.373 9.372-24.569 9.372-33.942 0z"></path>
+            </symbol>
+            <symbol id="icon-chevron-up" viewBox="0 0 448 512">
+               <path fill="currentColor" d="M240.971 130.524l194.343 194.343c9.373 9.373 9.373 24.569 0 33.941l-22.667 22.667c-9.357 9.357-24.522 9.375-33.901.04L224 227.495 69.255 381.516c-9.379 9.335-24.544 9.317-33.901-.04l-22.667-22.667c-9.373-9.373-9.373-24.569 0-33.941L207.03 130.525c9.372-9.373 24.568-9.373 33.941-.001z"></path>
+            </symbol>
+         </defs>
+      </svg>
       `;
    };
 
@@ -287,8 +365,9 @@ export class FrostListGrid extends LitElement {
       --ff-listgrid-scrollbar-corner: rgba(0, 0, 0, 0);
 
       display: grid;
-      overflow: hidden;
-      height: 90vh;
+      grid-template-areas: "listgrid";
+      grid-template-rows: 1fr;
+      grid-template-columns: 1fr;
       color: var(--ff-listgrid-text-color);
    }
 
@@ -296,8 +375,22 @@ export class FrostListGrid extends LitElement {
 
    .host {
       display: grid;
+      grid-area: listgrid;
       overflow: hidden;
       -webkit-font-smoothing: antialiased;
+   }
+
+   /*  */
+
+   .iconHost {
+      display: none;
+   }
+
+   /*  */
+
+   .icon {
+      width: 1rem;
+      height: 1rem;
    }
 
    /*  */
@@ -324,6 +417,10 @@ export class FrostListGrid extends LitElement {
       flex-flow: row nowrap;
       align-items: center;
       height: 100%;
+   }
+   .listHeaderWrapper .listHeader .headerField .checkbox {
+      display: grid;
+      place-items: center;
    }
    .listHeaderWrapper .listHeader .headerField {
       overflow: hidden;
@@ -365,6 +462,8 @@ export class FrostListGrid extends LitElement {
    .listHeaderWrapper .listHeader .headerField .columnMenuWrapper .columnMenu,
    .listHeaderWrapper .listHeader .headerField .columnMenuWrapper .columnSort {
       cursor:pointer;
+      display: grid;
+      place-items: center;
    }
    .listHeaderWrapper .listHeader .headerField .columnMenuWrapper .columnMenu:hover,
    .listHeaderWrapper .listHeader .headerField .columnMenuWrapper .columnSort:hover {
@@ -446,6 +545,8 @@ export class FrostListGrid extends LitElement {
       align-items: center;
    }
    .listRowWrapper .viewportWrapper .viewport .viewMover .listRow .rowField .checkbox {
+      display: grid;
+      place-items: center;
       padding-right: 0.4rem;
       opacity: 0.4;
    }
@@ -454,6 +555,8 @@ export class FrostListGrid extends LitElement {
       flex-flow: row;
    }
    .listRowWrapper .viewportWrapper .viewport .viewMover .listRow .rowField .icons>* {
+      display: grid;
+      place-items: center;
       opacity: 0.4;
       margin-right: 0.4rem;
       transition: opacity 0.2s linear;
