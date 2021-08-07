@@ -45,9 +45,6 @@ export class FrostPreviewOrOpen extends LitElement {
    * {
       box-sizing: border-box;
    }
-   .iconHost {
-      display: none;
-   }
    .icons {
       display: flex;
       flex-flow: row;

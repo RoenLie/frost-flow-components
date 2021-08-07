@@ -1,6 +1,6 @@
 import { Story, Meta } from "@storybook/web-components";
 import { html } from "lit";
-import { FrostListGrid, VirtualScrollApi } from "../../lit-components/src/components/frost-list-grid/FrostListGrid";
+import { FrostListGrid, ListGridApi } from "../../lit-components/src/components/frost-list-grid/FrostListGrid";
 import { FrostPreviewOrOpen } from "../../lit-components/src/components/frost-list-grid/field-renderers/FrostPreviewOrOpen";
 FrostListGrid;
 FrostPreviewOrOpen;
@@ -67,6 +67,7 @@ const colDefs = [
       renderer: ( rowData ) => html`
          <frost-preview-or-open
             .rowData=${ rowData }
+            @click=${ ( e: Event ) => { e.stopPropagation(); } }
             @onOpen=${ ( e ) => console.log( 'on open event', e ) }
             @onPreview=${ ( e ) => console.log( 'on preview event', e ) }
          ></frost-preview-or-open>`
@@ -200,13 +201,9 @@ const colDefs = [
    }
 ];
 
-const api = new VirtualScrollApi();
-api.listApi.setColumnDefinitions( defaultColDefs, colDefs );
-api.listApi.setDatasource( { getRows: getRowsAsync } );
-
-// api.publishers.rowClick.subscribe( ( rowData ) => {
-//    console.log( 'from subscription', rowData );
-// } );
+const api = new ListGridApi();
+api.setupApi.columnDefinitions( defaultColDefs, colDefs );
+api.setupApi.datasource( { getRows: getRowsAsync } );
 
 
 const Template: Story = () => html`
@@ -214,6 +211,7 @@ const Template: Story = () => html`
       <frost-list-grid .api=${ api }></frost-list-grid>
    </div>
 `;
+
 
 export const Default = Template.bind( {} );
 Default.args = {

@@ -26,12 +26,6 @@ export interface IGetRowsParams {
 export interface IDatasource {
    getRows: ( { }: IGetRowsParams ) => Promise<any>;
 }
-export type TDatasourceOptions = {
-   batchSize: number;
-};
-export interface ISSROptions {
-   [ key: string ]: any;
-}
 export interface IDefaultColDefs {
    [ key: string ]: any;
 }
@@ -45,10 +39,9 @@ export interface IColDefs {
    menu?: boolean;
    renderer?: any;
 }
-
-type ListGridMode = 'ssr' | 'normal';
-interface FlexibleHTMLElement extends HTMLElement { [ key: string ]: any; };
-type TEventSubscription = [ FlexibleHTMLElement | Window, keyof WindowEventMap, any ][];
+export type ListGridMode = 'ssr' | 'normal';
+export interface FlexibleHTMLElement extends HTMLElement { [ key: string ]: any; };
+export type TEventSubscription = [ FlexibleHTMLElement | Window, keyof WindowEventMap, any ][];
 class EventApi {
    subscriptions: TEventSubscription = [];
    subscribe() {
@@ -60,43 +53,19 @@ class EventApi {
    }
 }
 
-
-export class VirtualScrollApi {
-   mode: ListGridMode = 'ssr';
-   rerender: () => void = () => { };
-   debounceRender = debounce( () => this.rerender(), 100 ).bind( this );
-   listApi = new ListApi( this );
-   columnApi = new ColumnApi( this );
-   styleApi = new StyleApi( this );
-   publishers = {
-      moveColumn: new Publisher<any[]>( [] ),
-      resizeColumn: new Publisher<any[]>( [] ),
-      hideColumn: new Publisher<any[]>( [] ),
-      sortColumn: new Publisher<any[]>( [] ),
-      rowData: new Publisher<TSuccessParams>( { rowData: [], lastRow: -1 } ),
-      query: new Publisher( 0 ),
-      rowClick: new Publisher( { data: {}, field: '', index: 0 } )
-   };
-   constructor () { }
-}
-
 class ColumnApi {
-   root: VirtualScrollApi;
-   colDefs = new ColumnDefinitions();
-   columnMenuApi = new ColumnMenuApi( this );
-   moveColumnApi = new MoveColumnApi( this );
-   resizeColumnApi = new ResizeColumnApi( this );
-   constructor ( root: VirtualScrollApi ) {
-      this.root = root;
-   }
+   root: ListGridApi;
+
+   constructor ( root: ListGridApi ) { this.root = root; }
 
    toggleColumn( field: string ) {
-      const value = this.colDefs.custom[ field ].hidden;
+      const { columnDefinitions } = this.root;
+      const value = columnDefinitions.custom[ field ].hidden;
 
-      this.colDefs.custom = {
-         ...this.colDefs.custom,
+      columnDefinitions.custom = {
+         ...columnDefinitions.custom,
          [ field ]: {
-            ...this.colDefs.custom[ field ],
+            ...columnDefinitions.custom[ field ],
             hidden: value ? false : true
          }
       };
@@ -135,20 +104,17 @@ class ColumnDefinitions {
 }
 
 class ColumnMenuApi extends EventApi {
-   columnApi: ColumnApi;
+   root: ListGridApi;
    open = false;
    xy = [ 150, 150 ];
 
-   constructor ( columnApi: ColumnApi ) {
-      super();
-      this.columnApi = columnApi;
-   }
+   constructor ( root: ListGridApi ) { super(); this.root = root; }
 
    openMenu( e: MouseEvent ) {
       this.open = true;
       this.xy = [ e.clientX - 15, e.clientY - 15 ];
       this.subscriptions.push( [ window, 'mousedown', this.closeMenu.bind( this ) ] );
-      this.columnApi.root.rerender();
+      this.root.rerender();
       super.subscribe();
    }
    closeMenu( e: MouseEvent ) {
@@ -159,13 +125,13 @@ class ColumnMenuApi extends EventApi {
 
       this.open = false;
       this.xy = [ 0, 0 ];
-      this.columnApi.root.rerender();
+      this.root.rerender();
       super.unsubscribe();
    }
 }
 
 class MoveColumnApi extends EventApi {
-   columnApi: ColumnApi;
+   root: ListGridApi;
    field = '';
    label = '';
    moving = false;
@@ -173,10 +139,7 @@ class MoveColumnApi extends EventApi {
    offset = [ 0, 0 ];
    frameQueue = false;
 
-   constructor ( columnApi: ColumnApi ) {
-      super();
-      this.columnApi = columnApi;
-   }
+   constructor ( root: ListGridApi ) { super(); this.root = root; }
 
    mousedown( e: MouseEvent, field: string, id: string ) {
       e.preventDefault();
@@ -185,7 +148,7 @@ class MoveColumnApi extends EventApi {
 
       this.startPos = [ e.clientX, e.clientY ];
       this.field = field;
-      this.label = this.columnApi.colDefs.merged
+      this.label = this.root.columnDefinitions.merged
          .find( d => d.field == field )?.label || '';
 
       this.subscribe();
@@ -220,7 +183,7 @@ class MoveColumnApi extends EventApi {
          const offset = [ e.clientX - this.startPos[ 0 ], e.clientY - this.startPos[ 1 ] ];
          this.offset = offset;
 
-         this.columnApi.root.rerender();
+         this.root.rerender();
 
          this.frameQueue = false;
       } ) );
@@ -231,29 +194,29 @@ class MoveColumnApi extends EventApi {
          return;
       }
 
-      const { columnApi } = this.columnApi.root;
+      const { columnDefinitions: colDefs } = this.root;
 
-      let moveable = columnApi.colDefs.custom[ field ].moveable;
+      let moveable = colDefs.custom[ field ].moveable;
       moveable = moveable === undefined ? true : moveable;
 
       if ( !this.moving || !moveable || this.field == field ) return;
 
-      const order1 = columnApi.colDefs.custom[ this.field ].order;
-      const order2 = columnApi.colDefs.custom[ field ].order;
+      const order1 = colDefs.custom[ this.field ].order;
+      const order2 = colDefs.custom[ field ].order;
 
-      columnApi.colDefs.custom = {
-         ...columnApi.colDefs.custom,
+      colDefs.custom = {
+         ...colDefs.custom,
          [ this.field ]: {
-            ...columnApi.colDefs.custom[ this.field ],
+            ...colDefs.custom[ this.field ],
             order: order2
          },
          [ field ]: {
-            ...columnApi.colDefs.custom[ field ],
+            ...colDefs.custom[ field ],
             order: order1
          }
       };
 
-      this.columnApi.root.rerender();
+      this.root.rerender();
    }
    mouseup() {
       this.unsubscribe();
@@ -266,7 +229,7 @@ class MoveColumnApi extends EventApi {
       super.subscribe();
    }
    unsubscribe() {
-      const { publishers } = this.columnApi.root;
+      const { publishers } = this.root;
       if ( this.moving ) publishers.moveColumn.publish();
 
       this.field = '';
@@ -275,21 +238,18 @@ class MoveColumnApi extends EventApi {
       document.body.classList.remove( 'cursorMove' );
 
       super.unsubscribe();
-      this.columnApi.root.rerender();
+      this.root.rerender();
    }
 }
 
 class ResizeColumnApi extends EventApi {
-   columnApi: ColumnApi;
+   root: ListGridApi;
    field: string | null = null;
    resizing = false;
    element = null as HTMLElement | null;
    frameQueue = false;
 
-   constructor ( columnApi: ColumnApi ) {
-      super();
-      this.columnApi = columnApi;
-   }
+   constructor ( root: ListGridApi ) { super(); this.root = root; }
 
    getRects() { return this.element?.getBoundingClientRect(); }
    mousedown( e: MouseEvent, field: string ) {
@@ -315,18 +275,18 @@ class ResizeColumnApi extends EventApi {
 
          this.resizing = true;
 
-         const { columnApi } = this.columnApi.root;
+         const { columnDefinitions: colDefs } = this.root;
          const width = e.x - rects.left;
 
-         columnApi.colDefs.custom = {
-            ...columnApi.colDefs.custom,
+         colDefs.custom = {
+            ...colDefs.custom,
             [ this.field ]: {
-               ...columnApi.colDefs.custom[ this.field ],
+               ...colDefs.custom[ this.field ],
                width
             }
          };
 
-         this.columnApi.root.rerender();
+         this.root.rerender();
          this.frameQueue = false;
       } );
    }
@@ -341,25 +301,23 @@ class ResizeColumnApi extends EventApi {
       super.subscribe();
    }
    unsubscribe() {
-      const { publishers } = this.columnApi.root;
+      const { publishers } = this.root;
       if ( this.resizing ) publishers.resizeColumn.publish();
 
       super.unsubscribe();
       this.field = null;
       this.resizing = false;
       this.frameQueue = false;
-      this.columnApi.root.rerender();
+      this.root.rerender();
    }
 }
 
 class ListApi {
-   root: VirtualScrollApi;
-   scrollApi = new ScrollApi( this );
-   listWrapperApi = new ListWrapperApi( this );
-   childHeight: number = 45;
+   root: ListGridApi;
    get startNode() {
       const min = 0;
-      const max = Math.floor( this.scrollApi.scrollTop / this.childHeight )
+      const max = Math.floor( this.root.scrollApi.scrollTop
+         / this.root.options.rowHeight )
          - this.availableHeight;
       return Math.max( min, max );
    };
@@ -369,15 +327,15 @@ class ListApi {
       return Math.min( min, max );
    }
    get totalHeight() {
-      return this.rowCount * this.childHeight || 0;
+      return this.rowCount * this.root.options.rowHeight || 0;
    };
    get availableHeight() {
-      return Math.ceil( this.wrapperHeight / this.childHeight ) || 0;
+      return Math.ceil( this.wrapperHeight / this.root.options.rowHeight ) || 0;
    }
    get offsetY() {
-      const baseOffset = this.startNode * this.childHeight;
+      const baseOffset = this.startNode * this.root.options.rowHeight;
 
-      let extra = this.scrollApi.scrollTop > this.wrapperHeight
+      let extra = this.root.scrollApi.scrollTop > this.wrapperHeight
          ? Math.ceil( this.wrapperHeight / 2 )
          : 0;
 
@@ -403,7 +361,7 @@ class ListApi {
    }
    get sortModel() {
       return Object
-         .entries( this.root.columnApi.colDefs.custom )
+         .entries( this.root.columnDefinitions.custom )
          .filter( ( o: any ) => o[ 1 ].sort )
          .map( ( def: any ) => ( { sort: def[ 1 ].sort, colId: def[ 1 ].field } ) );
    }
@@ -421,28 +379,16 @@ class ListApi {
    }
    datasource: IDatasource;
    querying = false;
-   ssrOptions: ISSROptions = {
-      batchSize: 100
-   };
    rowData: any[] = [];
    lastRow: number = -1;
    checkedRows: any = {};
    allRowsChecked = false;
    cachedRequest: TRequest;
 
-   constructor ( root: VirtualScrollApi ) { this.root = root; }
+   constructor ( root: ListGridApi ) { this.root = root; }
 
-   setDatasource( datasource: IDatasource ) {
-      this.datasource = datasource;
-   }
-   setColumnDefinitions( defaultColDefs: IDefaultColDefs, colDefs: IColDefs[] ) {
-      const { columnApi } = this.root;
-      columnApi.colDefs.default = defaultColDefs;
-      columnApi.colDefs.base = colDefs;
-      columnApi.colDefs.custom = columnApi.colDefs.createCustomColDefs();
-   }
-   checkAllRows( e: any ) {
-      const v = e.target.checked;
+   checkAllRows( e: any, override?: boolean ) {
+      const v = override !== undefined ? override : e.target.checked;
       this.allRowsChecked = v;
 
       if ( !v ) this.checkedRows = {};
@@ -455,9 +401,15 @@ class ListApi {
 
       this.root.rerender();
    }
-   checkRow( rowIndex: number ) {
-      let value = this.checkedRows[ rowIndex ];
+   checkRow( rowIndex: number, override?: boolean ) {
+      let value = override !== undefined ? override : this.checkedRows[ rowIndex ];
       value = value === undefined ? true : !value;
+
+      if ( !this.root.options.multiSelect ) {
+         if ( this.allRowsChecked ) value = true;
+         this.allRowsChecked = false;
+         this.checkedRows = {};
+      }
 
       this.checkedRows[ rowIndex ] = value;
       this.checkedRows = { ...this.checkedRows };
@@ -465,23 +417,61 @@ class ListApi {
       if ( !value && this.allRowsChecked )
          this.allRowsChecked = false;
 
-      if ( Object.values( this.checkedRows )
+      if ( Object
+         .values( this.checkedRows )
          .filter( Boolean ).length == this.rowCount )
          this.allRowsChecked = true;
 
       this.root.rerender();
    }
+   clickRow( e: Event ) {
+      const path = e.composedPath();
+
+      const dataAssignment = [
+         [ 'data-row-index', 'index' ],
+         [ 'data-field', 'field' ]
+      ];
+
+      /* goes through the composed path and extracts the attributes
+      from data assignment variable and returns them in an object */
+      const row = path.reduce( ( a, _el ) => {
+         const el = _el as HTMLElement;
+         if ( !el.getAttribute ) return a;
+
+         const dataAttr = dataAssignment.reduce( ( _a, _c ) => {
+            const attr = el.getAttribute( _c[ 0 ] );
+            if ( attr ) _a[ 0 ] = _c[ 1 ], _a[ 1 ] = attr;
+            return _a;
+         }, [] );
+
+         if ( dataAttr.length ) a[ dataAttr[ 0 ] ] = dataAttr[ 1 ];
+
+         return a;
+      }, {} as any );
+
+      const rowData = {
+         data: this.rowData[ row.index ],
+         field: row.field,
+         index: Number( row.index )
+      };
+
+      this.root.publishers.rowClick.next( rowData );
+
+      if ( this.root.options.selectOnClick ) {
+         this.checkRow( rowData.index );
+      }
+   }
    sortRows( field: string ) {
-      const { moveColumnApi, resizeColumnApi } = this.root.columnApi;
+      const { moveColumnApi, resizeColumnApi } = this.root;
       if ( moveColumnApi.moving || resizeColumnApi.resizing ) return;
 
-      const sort = this.root.columnApi.colDefs.custom[ field ].sort;
+      const sort = this.root.columnDefinitions.custom[ field ].sort;
       const newSort = !sort ? 'asc' : sort == 'asc' ? 'desc' : null;
 
-      this.root.columnApi.colDefs.custom = {
-         ...this.root.columnApi.colDefs.custom,
+      this.root.columnDefinitions.custom = {
+         ...this.root.columnDefinitions.custom,
          [ field ]: {
-            ...this.root.columnApi.colDefs.custom[ field ],
+            ...this.root.columnDefinitions.custom[ field ],
             sort: newSort
          }
       };
@@ -500,7 +490,7 @@ class ListApi {
 
       const baseRequestRows = {
          startRow: request.startRow || 0,
-         endRow: ( request.startRow || 0 ) + this.ssrOptions.batchSize,
+         endRow: ( request.startRow || 0 ) + this.root.options.batchSize,
       };
 
       const baseRequestMisc = {
@@ -563,20 +553,17 @@ class ListApi {
 }
 
 class ListWrapperApi extends EventApi {
-   listApi: ListApi;
+   root: ListGridApi;
    element: HTMLDivElement | null;
    frameQueue = false;
    resizing = false;
    debounceResize = debounce( this.resizeEnd.bind( this ) );
 
-   constructor ( listApi: ListApi ) {
-      super();
-      this.listApi = listApi;
-   }
+   constructor ( root: ListGridApi ) { super(); this.root = root; }
 
    resizeEnd() {
       this.resizing = false;
-      this.listApi.root.rerender();
+      this.root.rerender();
    }
    calcWrapperHeight = () => {
       const el = this.element;
@@ -588,14 +575,14 @@ class ListWrapperApi extends EventApi {
 
          if ( !this.resizing ) {
             this.resizing = true;
-            this.listApi.root.rerender();
+            this.root.rerender();
          }
 
          this.debounceResize();
 
          const rects = el.getBoundingClientRect();
-         this.listApi.wrapperWidth = rects.width;
-         this.listApi.wrapperHeight = rects.height;
+         this.root.listApi.wrapperWidth = rects.width;
+         this.root.listApi.wrapperHeight = rects.height;
 
          this.frameQueue = false;
       } );
@@ -607,29 +594,26 @@ class ListWrapperApi extends EventApi {
 }
 
 class ScrollApi extends EventApi {
-   listApi: ListApi;
+   root: ListGridApi;
    scrollTop = 0;
    scrollLeft = 0;
    scrollYDirection = 0;
    element: FlexibleHTMLElement | null;
    frameQueue = false;
    get bottomTrigger() {
-      if ( this.listApi.root.mode == 'normal' ) return false;
+      if ( this.root.mode == 'normal' ) return false;
 
       const el = this.element;
       if ( !el ) return false;
 
       const trigger = Math.ceil(
-         el.offsetHeight + this.scrollTop + ( this.listApi.childHeight * 2 )
+         el.offsetHeight + this.scrollTop + ( this.root.options.rowHeight * 2 )
       );
 
       return trigger > el.scrollHeight && this.scrollYDirection > 0;
    }
 
-   constructor ( listApi: ListApi ) {
-      super();
-      this.listApi = listApi;
-   }
+   constructor ( root: ListGridApi ) { super(); this.root = root; }
 
    onScroll( e: Event ) {
       requestAnimationFrame( () => {
@@ -639,7 +623,7 @@ class ScrollApi extends EventApi {
          const el = this.element;
          if ( !el ) return;
 
-         const { listApi } = this;
+         const { listApi } = this.root;
 
          this.scrollYDirection = Math.sign( el.scrollTop - el.lastScrollTop );
          this.scrollTop = el.scrollTop;
@@ -647,7 +631,7 @@ class ScrollApi extends EventApi {
 
          /* rerender if scrolling in the X axis */
          if ( el.lastScrollLeft != el.scrollLeft ) {
-            this.listApi.root.rerender();
+            this.root.rerender();
 
             el.lastScrollLeft = el.scrollLeft;
             el.lastScrollTop = el.scrollTop;
@@ -665,22 +649,20 @@ class ScrollApi extends EventApi {
          }
 
          /* trigger rerender when reaching end of visible rows */
-         const moverEl = el.querySelector( '[data-name="viewmover"]' );
+         const moverEl = el.querySelector( '#viewmover' );
          const wrapperRects = el.getBoundingClientRect();
          const moverRects = moverEl?.getBoundingClientRect();
+         const rerenderer = this.root.options.listScrollDebounce
+            ? this.root.debounceRender
+            : this.root.rerender;
 
          if ( wrapperRects.top < Number( moverRects?.top ) && this.scrollTop > 0 ) {
-            // this.listApi.root.debounceRender();
-            this.listApi.root.rerender();
+            rerenderer();
          }
 
          if ( wrapperRects.bottom > Number( moverRects?.bottom ) ) {
-            // this.listApi.root.debounceRender();
-            this.listApi.root.rerender();
+            rerenderer();
          }
-
-         // const viewableHeight =
-         // this.listApi.visibleNodeCount * this.listApi.childHeight;
 
          el.lastScrollLeft = el.scrollLeft;
          el.lastScrollTop = el.scrollTop;
@@ -701,10 +683,10 @@ class ScrollApi extends EventApi {
 }
 
 class StyleApi {
-   root: VirtualScrollApi;
+   root: ListGridApi;
    get viewportWrapperStyle() {
-      const { listApi } = this.root;
-      if ( listApi.listWrapperApi.resizing )
+      const { listApi, listWrapperApi } = this.root;
+      if ( listWrapperApi.resizing )
          return { height: 'auto' };
 
       return {
@@ -730,21 +712,21 @@ class StyleApi {
       };
    }
    get listHeaderStyle() {
-      const { scrollApi } = this.root.listApi;
+      const { scrollApi } = this.root;
       return {
          willChange: 'transform',
          transform: `translateX(${ -scrollApi.scrollLeft }px)`
       };
    }
    get headerMenuStyle() {
-      const { columnMenuApi } = this.root.columnApi;
+      const { columnMenuApi } = this.root;
       return {
          left: `${ columnMenuApi.xy[ 0 ] }px`,
          top: `${ columnMenuApi.xy[ 1 ] }px`,
       };
    }
    get columnGhostStyle() {
-      const { moveColumnApi } = this.root.columnApi;
+      const { moveColumnApi } = this.root;
       return {
          top: `${ moveColumnApi.startPos[ 1 ] - 5 }px`,
          left: `${ moveColumnApi.startPos[ 0 ] - 15 }px`,
@@ -755,7 +737,62 @@ class StyleApi {
       };
    }
 
-   constructor ( root: VirtualScrollApi ) {
-      this.root = root;
+   constructor ( root: ListGridApi ) { this.root = root; }
+}
+
+class SetupApi {
+   root: ListGridApi;
+
+   constructor ( root: ListGridApi ) { this.root = root; }
+
+   initialize() {
+      const { listWrapperApi, scrollApi } = this.root;
+      listWrapperApi.element = this.root.hostEl.querySelector( '#listRowWrapper' );
+      scrollApi.element = this.root.hostEl.querySelector( '#viewportWrapper' );
+      scrollApi.subscribe();
+      listWrapperApi.subscribe();
+      listWrapperApi.calcWrapperHeight();
    }
+   datasource( datasource: IDatasource ) {
+      this.root.listApi.datasource = datasource;
+   }
+   columnDefinitions( defaultColDefs: IDefaultColDefs, colDefs: IColDefs[] ) {
+      const { columnDefinitions } = this.root;
+      columnDefinitions.default = defaultColDefs;
+      columnDefinitions.base = colDefs;
+      columnDefinitions.custom = columnDefinitions.createCustomColDefs();
+   }
+}
+
+export class ListGridApi {
+   mode: ListGridMode = 'ssr';
+   hostEl: HTMLElement | ShadowRoot;
+   rerender: () => void = () => { };
+   debounceRender = debounce( () => this.rerender(), 100 ).bind( this );
+   setupApi = new SetupApi( this );
+   listApi = new ListApi( this );
+   scrollApi = new ScrollApi( this );
+   listWrapperApi = new ListWrapperApi( this );
+   columnApi = new ColumnApi( this );
+   columnDefinitions = new ColumnDefinitions();
+   columnMenuApi = new ColumnMenuApi( this );
+   moveColumnApi = new MoveColumnApi( this );
+   resizeColumnApi = new ResizeColumnApi( this );
+   styleApi = new StyleApi( this );
+   publishers = {
+      moveColumn: new Publisher<any[]>( [] ),
+      resizeColumn: new Publisher<any[]>( [] ),
+      hideColumn: new Publisher<any[]>( [] ),
+      sortColumn: new Publisher<any[]>( [] ),
+      rowData: new Publisher<TSuccessParams>( { rowData: [], lastRow: -1 } ),
+      query: new Publisher( 0 ),
+      rowClick: new Publisher( { data: {}, field: '', index: 0 } )
+   };
+   options = {
+      listScrollDebounce: false,
+      multiSelect: false,
+      selectOnClick: false,
+      batchSize: 100,
+      rowHeight: 45
+   };
 }

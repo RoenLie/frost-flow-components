@@ -8,7 +8,7 @@
    "module": "dist/index.js",
    "scripts": {
       "start": "tsc && concurrently -k -r \"tsc --watch --preserveWatchOutput\" \"wds\"",
-      "build": "tsc",
+      "build": "tsc && yarn rollup -c",
       "prepare": "tsc"
    },
    "dependencies": {

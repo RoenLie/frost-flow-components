@@ -2,104 +2,46 @@ import { css, html, LitElement } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { classMap } from 'lit/directives/class-map.js';
 import { styleMap } from 'lit/directives/style-map.js';
-import { IColDefs, VirtualScrollApi } from "./FrostListGridApi";
-export { VirtualScrollApi } from "./FrostListGridApi";
+import { IColDefs, ListGridApi } from "./FrostListGridApi";
+export { ListGridApi } from "./FrostListGridApi";
 
-
-interface FlexibleHTMLElement extends HTMLElement { [ key: string ]: any; };
 
 @customElement( "frost-list-grid" )
 export class FrostListGrid extends LitElement {
-   @property( { type: Object } ) api: VirtualScrollApi;
+   @property( { type: Object } ) api: ListGridApi;
    initialized = false;
-   hostId = Math.floor( Math.random() * 999 );
    visibleHeaders = html``;
    visibleRows = html``;
    headerMenu = html``;
    columnGhost = html``;
-   subscribers: [ FlexibleHTMLElement | Window, keyof WindowEventMap, any ][] = [];
 
    connectedCallback() {
       super.connectedCallback();
-      if ( this.api?.mode )
-         setTimeout( () => this.initialize( this.api ) );
+      if ( this.api ) this.initialize( this.api );
    }
    disconnectedCallback() {
       super.disconnectedCallback();
-      this.unsubscribe();
+
+      const { listWrapperApi, scrollApi } = this.api;
+      listWrapperApi.unsubscribe();
+      scrollApi.unsubscribe();
    }
 
-   initialize( api: VirtualScrollApi ) {
-      this.api = api;
-      this.api.rerender = this.requestUpdate.bind( this ) as any;
-
-      setTimeout( () => this.subscribe() );
-   }
-   subscribe() {
+   initialize( api: ListGridApi ) {
       if ( this.initialized ) return;
       this.initialized = true;
 
-      const { listWrapperApi, scrollApi } = this.api.listApi;
-      listWrapperApi.element = this.renderRoot.querySelector(
-         `#listRowWrapper-${ this.hostId }`
-      );
-      scrollApi.element = this.renderRoot.querySelector(
-         `#viewportWrapper-${ this.hostId }`
-      );
-      listWrapperApi.subscribe();
-      scrollApi.subscribe();
-      listWrapperApi.calcWrapperHeight();
-
-      // this.subscribers.push( [ viewmoverEl, 'click', this.onRowClick.bind( this ) ] );
-      // this.subscribers.forEach( s => s[ 0 ].addEventListener( s[ 1 ], s[ 2 ] ) );
-   }
-   unsubscribe() {
-      const { listWrapperApi, scrollApi } = this.api.listApi;
-      listWrapperApi.unsubscribe();
-      scrollApi.unsubscribe();
-
-      // this.subscribers.forEach( s => s[ 0 ].removeEventListener( s[ 1 ], s[ 2 ] ) );
-      // this.subscribers.length = 0;
-   }
-   onRowClick( e: Event ) {
-      const path = e.composedPath();
-
-      const dataAssignment = [
-         [ 'data-row-index', 'index' ],
-         [ 'data-field', 'field' ]
-      ];
-
-      /* goes through the composed path and extracts the attributes
-      from data assignment variable and returns them in an object */
-      const row = path.reduce( ( a, _el ) => {
-         const el = _el as HTMLElement;
-         if ( !el.getAttribute ) return a;
-
-         const dataAttr = dataAssignment.reduce( ( _a, _c ) => {
-            const attr = el.getAttribute( _c[ 0 ] );
-            if ( attr ) _a[ 0 ] = _c[ 1 ], _a[ 1 ] = attr;
-            return _a;
-         }, [] );
-
-         if ( dataAttr.length ) a[ dataAttr[ 0 ] ] = dataAttr[ 1 ];
-
-         return a;
-      }, {} as any );
-
-      const rowData = {
-         data: this.api.listApi.rowData[ row.index ],
-         field: row.field,
-         index: Number( row.index )
-      };
-
-      this.api.publishers.rowClick.next( rowData );
+      this.api = api;
+      this.api.rerender = this.requestUpdate.bind( this ) as any;
+      this.api.hostEl = this.renderRoot;
+      setTimeout( () => this.api.setupApi.initialize() );
    }
 
    ListRow = ( rowIndex: number ) => {
-      const { listApi, columnApi } = this.api;
+      const { listApi, columnApi, options, columnDefinitions } = this.api;
 
       const rowStyle = {
-         height: `${ listApi.childHeight }px`
+         height: `${ options.rowHeight }px`
       };
       const rowClasses = {
          listRow: true,
@@ -108,12 +50,11 @@ export class FrostListGrid extends LitElement {
          checked: listApi.checkedRows[ rowIndex ]
       };
 
-      /* @click=${ ( e: any ) => this.onRowClick( e, this.api.listApi.rowData[ rowIndex ] ) } */
       return html`
          <div class=${ classMap( rowClasses ) } style=${ styleMap( rowStyle ) }
             data-row-index=${ rowIndex }
          >
-            ${ columnApi.colDefs.merged
+            ${ columnDefinitions.merged
             .filter( def => !def.hidden )
             .map( ( def ) => this.ListRowField( def, rowIndex ) ) }
          </div>
@@ -148,13 +89,14 @@ export class FrostListGrid extends LitElement {
                      type="checkbox"
                      .checked=${ listApi.checkedRows[ rowIndex ] }
                      @change=${ () => listApi.checkRow( rowIndex ) }
+                     @click=${ ( e: Event ) => { e.stopPropagation(); } }
                   />
                </div>
             `}
+
             <!-- field renderer -->
-            ${ def.renderer ? def.renderer( rowData ) : html`
-               ${ !fieldText ? '' : html`<div class="fieldText">${ fieldText }</div>` }
-            `}
+            ${ def.renderer ? def.renderer( rowData )
+            : fieldText ? html`<div class="fieldText">${ fieldText }</div>` : '' }
          </div>
       `;
    };
@@ -162,12 +104,13 @@ export class FrostListGrid extends LitElement {
    render = () => {
       if ( !this.api ) return html``;
 
-      const { listApi, columnApi, styleApi } = this.api;
-      const { moveColumnApi, resizeColumnApi, columnMenuApi } = this.api.columnApi;
+      const { listApi, columnApi, styleApi,
+         moveColumnApi, resizeColumnApi, columnMenuApi,
+         columnDefinitions } = this.api;
       const { viewportWrapperStyle, viewportStyle, viewMoverStyle, listHeaderStyle } = styleApi;
 
-      this.visibleHeaders = !columnApi.colDefs.merged ? html`` : html`
-      ${ columnApi.colDefs.merged
+      this.visibleHeaders = !columnDefinitions.merged ? html`` : html`
+      ${ columnDefinitions.merged
             .filter( def => !def.hidden )
             .map( ( def ) => {
                const fieldId = 'fieldHeader-' + def.field;
@@ -189,6 +132,7 @@ export class FrostListGrid extends LitElement {
                      ${ def.checkbox ? html`
                      <div class="checkbox">
                         <input type="checkbox"
+                        ?disabled=${ !this.api.options.multiSelect }
                         .checked=${ listApi.allRowsChecked }
                         @change=${ listApi.checkAllRows.bind( listApi ) }
                         />
@@ -222,14 +166,14 @@ export class FrostListGrid extends LitElement {
                            </div>
                         `: '' }
 
-                        ${ def.menu !== true ? '' : html`
+                        ${ def.menu !== false ? html`
                            <div class="columnMenu"
                               @click=${ ( e: any ) => columnMenuApi.openMenu( e ) }>
                               <svg class="icon">
                                  <use id="use" xlink:href="#icon-bars-solid"></use>
                               </svg>
                            </div>
-                        `}
+                        ` : '' }
                      </div>
 
                      <!-- header field resize functionality -->
@@ -256,7 +200,7 @@ export class FrostListGrid extends LitElement {
       this.columnGhost = !moveColumnApi.moving ? html`` : html`
          <div class="columnGhost" style=${ styleMap( this.api.styleApi.columnGhostStyle ) }>
             <div class="label">
-               ${ this.api.columnApi.moveColumnApi.label }
+               ${ this.api.moveColumnApi.label }
             </div>
          </div>
       `;
@@ -267,7 +211,7 @@ export class FrostListGrid extends LitElement {
          >
             <div class="menu">
                <div class="fieldList">
-                  ${ columnApi.colDefs.merged.map( ( def, i ) => html`
+                  ${ columnDefinitions.merged.map( ( def, i ) => html`
                      <div class="field">
                         <input
                            id=${ def.field + i }
@@ -286,7 +230,7 @@ export class FrostListGrid extends LitElement {
 
 
       return html`
-      <div class="host" id=${ `listGridHost-${ this.hostId }` }>
+      <div class="host" id="listGridHost">
          <div class="wrapper">
             <!-- Header -->
             <div class="listHeaderWrapper">
@@ -296,15 +240,15 @@ export class FrostListGrid extends LitElement {
             </div>
 
             <!-- Rows -->
-            <div class="listRowWrapper" id=${ `listRowWrapper-${ this.hostId }` }>
+            <div class="listRowWrapper" id="listRowWrapper">
                <div class="viewportWrapper" style=${ styleMap( viewportWrapperStyle ) }
-                  id=${ `viewportWrapper-${ this.hostId }` }
+                  id="viewportWrapper"
                >
                   <div class="viewport" style=${ styleMap( viewportStyle ) }
                   >
                      <div class="viewMover" style=${ styleMap( viewMoverStyle ) }
-                        @click=${ this.onRowClick }
-                        id=${ `viewmover-${ this.hostId }` } data-name="viewmover"
+                        @click=${ this.api.listApi.clickRow.bind( this.api.listApi ) }
+                        id="viewmover"
                      >
                         ${ this.visibleRows }
                      </div>
@@ -337,38 +281,51 @@ export class FrostListGrid extends LitElement {
    * {
       box-sizing: border-box;
    }
+   div::-webkit-scrollbar {
+      height: var(--ff-listgrid-scrollbar-height, var(--scrollbar-height));
+      width: var(--ff-listgrid-scrollbar-width, var(--scrollbar-width));
+   }
+   div::-webkit-scrollbar-track {
+      background: var(--ff-listgrid-scrollbar-track, var(--scrollbar-track));
+   }
+   div::-webkit-scrollbar-thumb {
+      background: var(--ff-listgrid-scrollbar-thumb, var(--scrollbar-thumb));
+   }
+   div::-webkit-scrollbar-corner {
+      background: var(--ff-listgrid-scrollbar-corner, var(--scrollbar-corner));
+   }
 
    /*  */
 
    :host {
-      --ff-listgrid-text-color: white;
-      --ff-listgrid-header-wrapper-bg: hsla(200, 8%, 15%, 1);
-      --ff-listgrid-header-border: hsla(240, 3%, 42%, 1);
-      --ff-listgrid-header-field-bg: hsla(200, 8%, 15%, 1);
-      --ff-listgrid-column-menu-highlight: hsla(187, 71%, 82%, 1);
-      --ff-listgrid-header-menu-wrapper-bg: rgba(81, 35, 35, 1);
-      --ff-listgrid-row-border: hsla(240, 3%, 42%, 0.2);
-      --ff-listgrid-row-odd: hsla(200,8%,15%,1);
-      --ff-listgrid-row-even: hsla(197,13%,11%,1);
-      --ff-listgrid-row-checked-border: hsla(240, 3%, 42%, 1);
-      --ff-listgrid-row-checked-bg: hsla(201, 97%, 13%, 1);
-      --ff-listgrid-row-hover-bg: hsla(201, 96%, 11%,1);
-      --ff-listgrid-column-ghost-bg: rgba(81, 35, 35, 1);
-      --ff-listgrid-column-ghost-shadow: rgba(35, 35, 35, 1);
-      --ff-listgrid-column-ghost-border-radius: 0.2rem;
-      --ff-listgrid-header-menu-wrapper-shadow: rgba(35, 35, 35, 1);
-      --ff-listgrid-header-menu-wrapper-border-radius: 0.2rem;
-      --ff-listgrid-scrollbar-height: 0.75rem;
-      --ff-listgrid-scrollbar-width: 0.75rem;
-      --ff-listgrid-scrollbar-track: rgba(0, 0, 0, 0.15);
-      --ff-listgrid-scrollbar-thumb: rgba(255, 255, 255, 0.09);
-      --ff-listgrid-scrollbar-corner: rgba(0, 0, 0, 0);
+      --text-color: white;
+      --header-wrapper-bg: hsla(200, 8%, 15%, 1);
+      --header-border: hsla(240, 3%, 42%, 1);
+      --header-field-bg: hsla(200, 8%, 15%, 1);
+      --column-menu-highlight: hsla(187, 71%, 82%, 1);
+      --header-menu-wrapper-bg: rgba(81, 35, 35, 1);
+      --row-border: hsla(240, 3%, 42%, 0.2);
+      --row-odd: hsla(200,8%,15%,1);
+      --row-even: hsla(197,13%,11%,1);
+      --row-checked-border: hsla(240, 3%, 42%, 1);
+      --row-checked-bg: hsla(201, 97%, 13%, 1);
+      --row-hover-bg: hsla(201, 96%, 11%,1);
+      --column-ghost-bg: rgba(81, 35, 35, 1);
+      --column-ghost-shadow: rgba(35, 35, 35, 1);
+      --column-ghost-border-radius: 0.2rem;
+      --header-menu-wrapper-shadow: rgba(35, 35, 35, 1);
+      --header-menu-wrapper-border-radius: 0.2rem;
+      --scrollbar-height: 0.75rem;
+      --scrollbar-width: 0.75rem;
+      --scrollbar-track: rgba(0, 0, 0, 0.15);
+      --scrollbar-thumb: rgba(255, 255, 255, 0.09);
+      --scrollbar-corner: rgba(0, 0, 0, 0);
 
       display: grid;
       grid-template-areas: "listgrid";
       grid-template-rows: 1fr;
       grid-template-columns: 1fr;
-      color: var(--ff-listgrid-text-color);
+      color: var(--ff-listgrid-text-color, var(--text-color));
    }
 
    /*  */
@@ -408,8 +365,8 @@ export class FrostListGrid extends LitElement {
       position: relative;
       display: grid;
       grid-auto-flow: row;
-      background-color: var(--ff-listgrid-header-wrapper-bg);
-      border-bottom: 2px solid var(--ff-listgrid-header-border);
+      background-color: var(--ff-listgrid-header-wrapper-bg, var(--header-wrapper-bg));
+      border-bottom: 2px solid var(--ff-listgrid-header-border, var(--header-border));
    }
    .listHeaderWrapper .listHeader {
       position: absolute;
@@ -424,7 +381,7 @@ export class FrostListGrid extends LitElement {
    }
    .listHeaderWrapper .listHeader .headerField {
       overflow: hidden;
-      background-color: var(--ff-listgrid-header-field-bg);
+      background-color: var(--ff-listgrid-header-field-bg, var(--header-field-bg));
       position: relative;
       display: flex;
       flex-flow: row nowrap;
@@ -467,7 +424,7 @@ export class FrostListGrid extends LitElement {
    }
    .listHeaderWrapper .listHeader .headerField .columnMenuWrapper .columnMenu:hover,
    .listHeaderWrapper .listHeader .headerField .columnMenuWrapper .columnSort:hover {
-      color: var(--ff-listgrid-column-menu-highlight)
+      color: var(--ff-listgrid-column-menu-highlight, var(--column-menu-highlight))
    }
    .listHeaderWrapper .listHeader .headerField .columnResizer {
       position: absolute;
@@ -475,7 +432,7 @@ export class FrostListGrid extends LitElement {
       display: grid;
       place-items: center;
       height: 50%;
-      border: 1px solid var(--ff-listgrid-header-border);
+      border: 1px solid var(--ff-listgrid-header-border, var(--header-border));
    }
    .listHeaderWrapper .listHeader .headerField .columnResizer >* {
       position: absolute;
@@ -497,19 +454,6 @@ export class FrostListGrid extends LitElement {
    .listRowWrapper .viewportWrapper {
       overflow: auto;
    }
-   .listRowWrapper .viewportWrapper::-webkit-scrollbar {
-      height: var(--ff-listgrid-scrollbar-height);
-      width: var(--ff-listgrid-scrollbar-width);
-   }
-   .listRowWrapper .viewportWrapper::-webkit-scrollbar-track {
-      background: var(--ff-listgrid-scrollbar-track);
-   }
-   .listRowWrapper .viewportWrapper::-webkit-scrollbar-thumb {
-      background: var(--ff-listgrid-scrollbar-thumb);
-   }
-   .listRowWrapper .viewportWrapper::-webkit-scrollbar-corner {
-      background: var(--ff-listgrid-scrollbar-corner);
-   }
    .listRowWrapper .viewportWrapper .viewport {
       position: absolute;
    }
@@ -520,25 +464,25 @@ export class FrostListGrid extends LitElement {
       display: flex;
       flex-flow: row nowrap;
       align-items: center;
-      border-top: 1px solid var(--ff-listgrid-row-border);
-      border-bottom: 1px solid var(--ff-listgrid-row-border);
+      border-top: 1px solid var(--ff-listgrid-row-border, var(--row-border));
+      border-bottom: 1px solid var(--ff-listgrid-row-border, var(--row-border));
    }
    .listRowWrapper .viewportWrapper .viewport .viewMover .listRow.odd {
-      background-color: var(--ff-listgrid-row-odd);
+      background-color: var(--ff-listgrid-row-odd, var(--row-odd));
    }
    .listRowWrapper .viewportWrapper .viewport .viewMover .listRow.even {
-      background-color: var(--ff-listgrid-row-even);
+      background-color: var(--ff-listgrid-row-even, var(--row-even));
    }
    .listRowWrapper .viewportWrapper .viewport .viewMover .listRow.checked {
-      border-top: 1px solid var(--ff-listgrid-row-checked-border);
-      border-bottom: 1px solid var(--ff-listgrid-row-checked-border);
-      background-color: var(--ff-listgrid-row-checked-bg);
+      border-top: 1px solid var(--ff-listgrid-row-checked-border, var(--row-checked-border));
+      border-bottom: 1px solid var(--ff-listgrid-row-checked-border, var(--row-checked-border));
+      background-color: var(--ff-listgrid-row-checked-bg, var(--row-checked-bg));
    }
    .listRowWrapper .viewportWrapper .viewport .viewMover .listRow.checked .rowField .checkbox {
       opacity: 1;
    }
    .listRowWrapper .viewportWrapper .viewport .viewMover .listRow:hover {
-      background-color: var(--ff-listgrid-row-hover-bg);
+      background-color: var(--ff-listgrid-row-hover-bg, var(--row-hover-bg));
    }
    .listRowWrapper .viewportWrapper .viewport .viewMover .listRow .rowField {
       display: flex;
@@ -586,9 +530,9 @@ export class FrostListGrid extends LitElement {
       height: 3rem;
       opacity: 0.9;
 
-      background-color: var(--ff-listgrid-column-ghost-bg);
-      box-shadow: 0 0 5px 5px var(--ff-listgrid-column-ghost-shadow);
-      border-radius: var(--ff-listgrid-column-ghost-border-radius);
+      background-color: var(--ff-listgrid-column-ghost-bg, var(--column-ghost-bg));
+      box-shadow: 0 0 5px 5px var(--ff-listgrid-column-ghost-shadow, var(--column-ghost-shadow));
+      border-radius: var(--ff-listgrid-column-ghost-border-radius, var(--ghost-border-radius));
    }
    .columnGhost .label {
       margin: 0.5rem;
@@ -606,9 +550,9 @@ export class FrostListGrid extends LitElement {
       display: grid;
       height: 13rem;
       width: 12rem;
-      background-color: var(--ff-listgrid-header-menu-wrapper-bg);
-      box-shadow: 0 0 5px 5px var(--ff-listgrid-header-menu-wrapper-shadow);
-      border-radius: var(--ff-listgrid-header-menu-wrapper-border-radius);
+      background-color: var(--ff-listgrid-header-menu-wrapper-bg, var(--header-menu-wrapper-bg));
+      box-shadow: 0 0 5px 5px var(--ff-listgrid-header-menu-wrapper-shadow, var(--header-menu-wrapper-shadow));
+      border-radius: var(--ff-listgrid-header-menu-wrapper-border-radius, var(--header-menu-wrapper-border-radius));
    }
    .headerMenuWrapper .menu {
       display: grid;
@@ -617,19 +561,6 @@ export class FrostListGrid extends LitElement {
    .headerMenuWrapper .menu .fieldList {
       overflow: auto;
       display: grid;
-   }
-   .headerMenuWrapper .menu .fieldList::-webkit-scrollbar {
-      height: var(--ff-listgrid-scrollbar-height);
-      width: var(--ff-listgrid-scrollbar-width);
-   }
-   .headerMenuWrapper .menu .fieldList::-webkit-scrollbar-track {
-      background: var(--ff-listgrid-scrollbar-track);
-   }
-   .headerMenuWrapper .menu .fieldList::-webkit-scrollbar-thumb {
-      background: var(--ff-listgrid-scrollbar-thumb);
-   }
-   .headerMenuWrapper .menu .fieldList::-webkit-scrollbar-corner {
-      background: var(--ff-listgrid-scrollbar-corner);
    }
    .headerMenuWrapper .menu .fieldList .field {
       display: grid;
